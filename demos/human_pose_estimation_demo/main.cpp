@@ -40,6 +40,10 @@ bool ParseAndCheckCommandLine(int argc, char* argv[]) {
         throw std::logic_error("Parameter -m is not set");
     }
 
+    if (FLAGS_img_path.empty()) {
+        throw std::logic_error("Parameter -img_path is not set");
+    }
+
     return true;
 }
 
@@ -104,6 +108,8 @@ int main(int argc, char* argv[]) {
         if (!(FLAGS_i == "cam" ? cap.open(0) : cap.open(FLAGS_i))) {
             throw std::logic_error("Cannot open input file or camera: " + FLAGS_i);
         }
+        cap.set(cv::CAP_PROP_FRAME_WIDTH, 1920);
+        cap.set(cv::CAP_PROP_FRAME_HEIGHT, 1080);
 
         int delay = 33;
         double inferenceTime = 0.0;
@@ -115,8 +121,14 @@ int main(int argc, char* argv[]) {
         if (!FLAGS_no_show) {
             std::cout << "To close the application, press 'CTRL+C' or any key with focus on the output window" << std::endl;
         }
+        std::string sep = "/";
+        #ifdef _WIN32
+           sep = "\\";
+        #endif
 
-        cv::Mat hammer = cv::imread("/home/dkurtaev/open_model_zoo/hammer.png");
+        cv::Mat hammer = cv::imread(std::string(FLAGS_img_path) + sep + "hammer.png");
+        cv::Mat shield = cv::imread(std::string(FLAGS_img_path) + sep + "shield.png");
+        cv::resize(shield, shield, cv::Size(224, 224));
         cv::Mat mask;
         do {
             double t1 = static_cast<double>(cv::getTickCount());
@@ -158,6 +170,46 @@ int main(int argc, char* argv[]) {
               cv::Point2f lhip = pose.keypoints[11];
               cv::Point2f rshoulder = pose.keypoints[2];
               cv::Point2f lshoulder = pose.keypoints[5];
+              cv::Point2f lelbow = pose.keypoints[6];
+              cv::Point2f lwrist = pose.keypoints[7];
+
+              // shield part
+              const cv::Point2f absentKeypoint(-1.0f, -1.0f);
+              bool drawShield = true;
+              cv::Point2f shield_dir = lwrist - lelbow;
+              float larmLength = std::sqrt(shield_dir.dot(shield_dir));
+              if ((lelbow.x == absentKeypoint.x && lelbow.y == absentKeypoint.y)
+                      || (lwrist.x == absentKeypoint.x && lwrist.y == absentKeypoint.y))
+              {
+                  drawShield = false;
+              }
+              if (drawShield)
+              {
+                  //float threshold = mask.rows * 0.1;
+                  if ((std::abs(lelbow.y - lwrist.y) > larmLength * 0.4f)
+                          || (larmLength < 40)
+                          || (std::abs(lelbow.x - lwrist.x) < 0.1)
+                          || (lelbow.x < lshoulder.x)
+                          || (lwrist.x > lelbow.x)) // not in defense pose
+                  {
+                      drawShield = false;
+                  }
+              }
+              if (drawShield)
+              {
+                  cv::Mat shield_mask = cv::Mat::zeros(mask.size(), CV_8UC3);
+                  float shield_length = larmLength * 1.8;
+                  shield_dir.y /= larmLength;
+                  shield_dir.x /= larmLength;
+                  float angle = std::atan2(shield_dir.y, shield_dir.x) * 180 / M_PI;
+
+                  float scale = shield_length / (float)shield.cols;
+                  cv::Mat m = cv::getRotationMatrix2D(cv::Point(shield.cols / 2, shield.rows / 2), -angle+90, scale);
+                  m.at<double>(0, 2) = (lwrist.x - shield_length * 0.1 + lelbow.x)/2 - 0.6 * shield_length * shield_dir.y - shield_dir.x * (0.5 * shield_length);
+                  m.at<double>(1, 2) = (lwrist.y + lelbow.y)/2 + 0.6 * shield_length * shield_dir.x - shield_dir.y * (0.5 * shield_length);
+                  cv::warpAffine(shield, shield_mask, m, shield_mask.size());
+                  shield_mask.copyTo(image, shield_mask);
+              }
 
               if ((wrist.x == -1 && wrist.y == -1) ||
                   (neck.x == -1 && neck.y == -1) ||
@@ -191,6 +243,7 @@ int main(int argc, char* argv[]) {
               m.at<double>(0, 2) = wrist.x - 0.6 * hammerSize * dir.y - dir.x * (0.5 * hammerSize * hammer.rows / hammer.cols - offset);
               m.at<double>(1, 2) = wrist.y + 0.6 * hammerSize * dir.x - dir.y * (0.5 * hammerSize * hammer.rows / hammer.cols - offset);
               cv::warpAffine(hammer, mask, m, mask.size());
+
               mask.copyTo(image, mask);
 
               cv::Point2f nose = pose.keypoints[0];
@@ -202,6 +255,7 @@ int main(int argc, char* argv[]) {
                   // Generate a tree
                   drawLightning(image, cv::Point(elbow.x, 0), dst, 0.9, 0);
               }
+              //renderHumanPose(poses, image); // for debug
             }
 
             // cv::Mat fpsPane(35, 155, CV_8UC3);
@@ -214,7 +268,7 @@ int main(int argc, char* argv[]) {
             //             cv::FONT_HERSHEY_COMPLEX, 0.8, cv::Scalar(0, 0, 255));
             static int idx = 0;
             cv::imshow("ICV Human Pose Estimation", image);
-            cv::imwrite(cv::format("images/%06d.jpg", idx), image);
+            //cv::imwrite(cv::format("images/%06d.jpg", idx), image);
             idx += 1;
 
             int key = cv::waitKey(delay) & 255;

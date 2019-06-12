@@ -10,6 +10,10 @@
 /// @brief Message for help argument
 static const char help_message[] = "Print a usage message.";
 
+
+/// @brief Message for path to imgs for ar
+static const char img_path_message[] = "Path to images for ar.";
+
 /// @brief Message for video argument
 static const char video_message[] = "Required. Path to a video. Default value is \"cam\" to work with camera.";
 
@@ -31,6 +35,9 @@ static const char raw_output_message[] = "Optional. Output inference results as 
 
 /// @brief Defines flag for showing help message <br>
 DEFINE_bool(h, false, help_message);
+
+/// @brief Defines flag for input ar images <br>
+DEFINE_string(img_path, "", img_path_message);
 
 /// @brief Defines parameter for setting video file <br>
 /// It is a required parameter
@@ -65,6 +72,7 @@ static void showUsage() {
     std::cout << "Options:" << std::endl;
     std::cout << std::endl;
     std::cout << "    -h                         " << help_message << std::endl;
+    std::cout << "    -img_path \"<path>\"                " << img_path_message << std::endl;
     std::cout << "    -i \"<path>\"                " << video_message << std::endl;
     std::cout << "    -m \"<path>\"                " << human_pose_estimation_model_message << std::endl;
     std::cout << "    -d \"<device>\"              " << target_device_message << std::endl;
