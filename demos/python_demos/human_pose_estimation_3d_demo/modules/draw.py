@@ -95,3 +95,6 @@ def draw_poses(img, poses_2d):
             if was_found[edge[0]] and was_found[edge[1]]:
                 cv2.line(img, tuple(pose[0:2, edge[0]].astype(int)), tuple(pose[0:2, edge[1]].astype(int)),
                          (255, 255, 0), 4, cv2.LINE_AA)
+        for kpt_id in range(pose.shape[1]):
+            if pose[2, kpt_id] != -1:
+                cv2.circle(img, tuple(pose[0:2, kpt_id].astype(int)), 3, (0, 255, 255), -1, cv2.LINE_AA)
