@@ -8,7 +8,7 @@ import numpy as np
 from modules.inference_engine_openvino import InferenceEngineOpenVINO
 from modules.input_reader import VideoReader, ImageReader
 from modules.draw import Plotter3d, draw_poses
-from modules.parse_persons import parse_poses
+from modules.parse_poses import parse_poses
 
 
 def rotate_poses(poses_3d, R, t):
@@ -55,10 +55,10 @@ if __name__ == '__main__':
 
     stride = 8
     if not args.use_pytorch:
-        net = InferenceEngineOpenVINO(args.model, args.device, stride)
+        net = InferenceEngineOpenVINO(args.model, args.device)
     else:
         from modules.inference_engine_pytorch import InferenceEnginePyTorch
-        net = InferenceEnginePyTorch(args.model, args.device, stride)
+        net = InferenceEnginePyTorch(args.model, args.device)
 
     canvas_3d = np.zeros((720, 1280, 3), dtype=np.uint8)
     plotter = Plotter3d(canvas_3d.shape[:2])
@@ -92,6 +92,7 @@ if __name__ == '__main__':
             break
         input_scale = base_height / frame.shape[0]
         scaled_img = cv2.resize(frame, dsize=None, fx=input_scale, fy=input_scale)
+        scaled_img = scaled_img[:, 0:scaled_img.shape[1] - (scaled_img.shape[1] % stride)]  # better to pad, but cut out for demo
         if fx < 0:  # Focal length is unknown
             fx = np.float32(0.8 * frame.shape[1])
 

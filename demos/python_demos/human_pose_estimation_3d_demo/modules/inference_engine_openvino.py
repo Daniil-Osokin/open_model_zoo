@@ -5,9 +5,8 @@ from openvino.inference_engine import IENetwork, IECore
 
 
 class InferenceEngineOpenVINO:
-    def __init__(self, net_model_xml_path, device, stride):
+    def __init__(self, net_model_xml_path, device):
         self.device = device
-        self.stride = stride
 
         net_model_bin_path = os.path.splitext(net_model_xml_path)[0] + '.bin'
         self.net = IENetwork(model=net_model_xml_path, weights=net_model_bin_path)
@@ -22,7 +21,6 @@ class InferenceEngineOpenVINO:
         self.exec_net = self.ie.load_network(network=self.net, num_requests=1, device_name=device)
 
     def infer(self, img):
-        img = img[:, 0:img.shape[1] - (img.shape[1] % self.stride)]
         input_layer = next(iter(self.net.inputs))
         n, c, h, w = self.net.inputs[input_layer].shape
         if h != img.shape[0] or w != img.shape[1]:
