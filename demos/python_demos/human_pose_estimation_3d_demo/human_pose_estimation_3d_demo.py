@@ -97,8 +97,7 @@ if __name__ == '__main__':
             fx = np.float32(0.8 * frame.shape[1])
 
         inference_result = net.infer(scaled_img)
-        poses_3d, poses_2d = parse_poses(inference_result, scaled_img.shape[:2], stride,
-                                         fx * input_scale, is_video)
+        poses_3d, poses_2d = parse_poses(inference_result, input_scale, stride, fx, is_video)
         edges = []
         if len(poses_3d):
             poses_3d = rotate_poses(poses_3d, R, t)
@@ -108,14 +107,11 @@ if __name__ == '__main__':
             z = poses_3d_copy[:, 2::4]
             poses_3d[:, 0::4], poses_3d[:, 1::4], poses_3d[:, 2::4] = -z, x, -y
 
-            poses_3d = poses_3d.reshape(poses_3d.shape[0], 19, -1)[:, :, 0:3].copy()
+            poses_3d = poses_3d.reshape(poses_3d.shape[0], 19, -1)[:, :, 0:3]
             edges = (Plotter3d.SKELETON_EDGES + 19 * np.arange(poses_3d.shape[0]).reshape((-1, 1, 1))).reshape((-1, 2))
         plotter.plot(canvas_3d, poses_3d, edges)
         cv2.imshow(canvas_3d_window_name, canvas_3d)
 
-        if len(poses_2d):
-            poses_2d[:, 0:-1:3] = poses_2d[:, 0:-1:3] / input_scale
-            poses_2d[:, 1:-1:3] = poses_2d[:, 1:-1:3] / input_scale
         draw_poses(frame, poses_2d)
         current_time = (cv2.getTickCount() - current_time) / cv2.getTickFrequency()
         if mean_time == 0:

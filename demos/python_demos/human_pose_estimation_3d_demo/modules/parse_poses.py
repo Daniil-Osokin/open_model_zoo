@@ -16,16 +16,16 @@ limbs = [[18, 17, 1],
          [14, 13, 12]]
 
 
-def get_root_relative_poses(inference_results, input_size, stride):
-    height, width = input_size
+def get_root_relative_poses(inference_results):
     features, heatmap, paf_map = inference_results
 
     upsample_ratio = 4
-
     found_poses = extract_poses(heatmap[0:-1], paf_map, upsample_ratio)[0]
+    # scale coordinates to features space
+    found_poses[:, 0:-1:3] /= upsample_ratio
+    found_poses[:, 1:-1:3] /= upsample_ratio
+
     poses_2d = []
-    scale_x = width / (heatmap.shape[2] * stride)
-    scale_y = height / (heatmap.shape[1] * stride)
     num_kpt_panoptic = 19
     num_kpt = 18
     for pose_id in range(found_poses.shape[0]):
@@ -34,7 +34,7 @@ def get_root_relative_poses(inference_results, input_size, stride):
         pose_2d = np.ones(num_kpt_panoptic * 3 + 1, dtype=np.float32) * -1  # +1 for pose confidence
         for kpt_id in range(num_kpt):
             if found_poses[pose_id, kpt_id * 3] != -1:
-                x_2d, y_2d = found_poses[pose_id, kpt_id * 3:kpt_id * 3 + 2].astype(np.int32)
+                x_2d, y_2d = found_poses[pose_id, kpt_id * 3:kpt_id * 3 + 2]
                 conf = found_poses[pose_id, kpt_id * 3 + 2]
                 pose_2d[map_id_to_panoptic[kpt_id] * 3] = x_2d  # just repacking
                 pose_2d[map_id_to_panoptic[kpt_id] * 3 + 1] = y_2d
@@ -50,12 +50,9 @@ def get_root_relative_poses(inference_results, input_size, stride):
             # read all pose coordinates at neck location
             for kpt_id in range(num_kpt_panoptic):
                 map_3d = features[kpt_id * 3:(kpt_id + 1) * 3]
-                poses_3d[pose_id][kpt_id * 4] = map_3d[0, neck_2d[1] // upsample_ratio,
-                                                       neck_2d[0] // upsample_ratio] * AVG_PERSON_HEIGHT  # read root-relative coordinates
-                poses_3d[pose_id][kpt_id * 4 + 1] = map_3d[1, neck_2d[1] // upsample_ratio,
-                                                           neck_2d[0] // upsample_ratio] * AVG_PERSON_HEIGHT
-                poses_3d[pose_id][kpt_id * 4 + 2] = map_3d[2, neck_2d[1] // upsample_ratio,
-                                                           neck_2d[0] // upsample_ratio] * AVG_PERSON_HEIGHT
+                poses_3d[pose_id][kpt_id * 4] = map_3d[0, neck_2d[1], neck_2d[0]] * AVG_PERSON_HEIGHT
+                poses_3d[pose_id][kpt_id * 4 + 1] = map_3d[1, neck_2d[1], neck_2d[0]] * AVG_PERSON_HEIGHT
+                poses_3d[pose_id][kpt_id * 4 + 2] = map_3d[2, neck_2d[1], neck_2d[0]] * AVG_PERSON_HEIGHT
                 poses_3d[pose_id][kpt_id * 4 + 3] = poses_2d[pose_id][kpt_id * 3 + 2]
 
             # refine keypoints coordinates at corresponding limbs locations
@@ -65,48 +62,44 @@ def get_root_relative_poses(inference_results, input_size, stride):
                         for kpt_id_where in limb:
                             kpt_from_2d = poses_2d[pose_id][kpt_id_from*3: kpt_id_from*3 + 2].astype(int)
                             map_3d = features[kpt_id_where * 3:(kpt_id_where + 1) * 3]
-                            poses_3d[pose_id][kpt_id_where * 4] = map_3d[0, kpt_from_2d[1] // upsample_ratio,
-                                                                         kpt_from_2d[0] // upsample_ratio] * AVG_PERSON_HEIGHT
-                            poses_3d[pose_id][kpt_id_where * 4 + 1] = map_3d[1, kpt_from_2d[1] // upsample_ratio,
-                                                                             kpt_from_2d[0] // upsample_ratio] * AVG_PERSON_HEIGHT
-                            poses_3d[pose_id][kpt_id_where * 4 + 2] = map_3d[2, kpt_from_2d[1] // upsample_ratio,
-                                                                             kpt_from_2d[0] // upsample_ratio] * AVG_PERSON_HEIGHT
+                            poses_3d[pose_id][kpt_id_where * 4] = map_3d[0, kpt_from_2d[1], kpt_from_2d[0]] * AVG_PERSON_HEIGHT
+                            poses_3d[pose_id][kpt_id_where * 4 + 1] = map_3d[1, kpt_from_2d[1], kpt_from_2d[0]] * AVG_PERSON_HEIGHT
+                            poses_3d[pose_id][kpt_id_where * 4 + 2] = map_3d[2, kpt_from_2d[1], kpt_from_2d[0]] * AVG_PERSON_HEIGHT
                         break
 
-    poses_2d_scaled = []
-    for pose_2d in poses_2d:
-        pose_2d_scaled = np.ones(num_kpt_panoptic * 3 + 1, dtype=np.float32) * -1  # +1 for pose confidence
-        for kpt_id in range(num_kpt_panoptic):
-            if pose_2d[kpt_id * 3] != -1:
-                pose_2d_scaled[kpt_id * 3] = int(pose_2d[kpt_id * 3] * (stride / upsample_ratio) * scale_x)  # just repacking
-                pose_2d_scaled[kpt_id * 3 + 1] = int(pose_2d[kpt_id * 3 + 1] * (stride / upsample_ratio) * scale_y)
-                pose_2d_scaled[kpt_id * 3 + 2] = pose_2d[kpt_id * 3 + 2]
-        pose_2d_scaled[-1] = pose_2d[-1]
-        poses_2d_scaled.append(pose_2d_scaled)
-
-    return poses_3d, poses_2d_scaled, (height, width, features.shape[0])
+    return poses_3d, np.array(poses_2d), features.shape
 
 
 previous_poses_2d = []
 
 
-def parse_poses(inference_results, input_size, stride, fx, is_video=False):
+def parse_poses(inference_results, input_scale, stride, fx, is_video=False):
     global previous_poses_2d
-    poses_3d, poses_2d, features_shape = get_root_relative_poses(inference_results, input_size, stride)
+    poses_3d, poses_2d, features_shape = get_root_relative_poses(inference_results)
+    poses_2d_scaled = []
+    for pose_2d in poses_2d:
+        num_kpt = (pose_2d.shape[0] - 1) // 3
+        pose_2d_scaled = np.ones(pose_2d.shape[0], dtype=np.float32) * -1  # +1 for pose confidence
+        for kpt_id in range(num_kpt):
+            if pose_2d[kpt_id * 3] != -1:
+                pose_2d_scaled[kpt_id * 3] = int(pose_2d[kpt_id * 3] * stride / input_scale)
+                pose_2d_scaled[kpt_id * 3 + 1] = int(pose_2d[kpt_id * 3 + 1] * stride / input_scale)
+                pose_2d_scaled[kpt_id * 3 + 2] = pose_2d[kpt_id * 3 + 2]
+        pose_2d_scaled[-1] = pose_2d[-1]
+        poses_2d_scaled.append(pose_2d_scaled)
+
     if is_video:  # track poses ids
         current_poses_2d = []
-        for pose_id in range(len(poses_2d)):
+        for pose_id in range(len(poses_2d_scaled)):
             pose_keypoints = np.ones((Pose.num_kpts, 2), dtype=np.int32) * -1
             for kpt_id in range(Pose.num_kpts):
-                if poses_2d[pose_id][kpt_id * 3] != -1.0:  # keypoint was found
-                    pose_keypoints[kpt_id, 0] = int(poses_2d[pose_id][kpt_id * 3 + 0])
-                    pose_keypoints[kpt_id, 1] = int(poses_2d[pose_id][kpt_id * 3 + 1])
-            pose = Pose(pose_keypoints, poses_2d[pose_id][-1])
+                if poses_2d_scaled[pose_id][kpt_id * 3] != -1.0:  # keypoint was found
+                    pose_keypoints[kpt_id, 0] = int(poses_2d_scaled[pose_id][kpt_id * 3 + 0])
+                    pose_keypoints[kpt_id, 1] = int(poses_2d_scaled[pose_id][kpt_id * 3 + 1])
+            pose = Pose(pose_keypoints, poses_2d_scaled[pose_id][-1])
             current_poses_2d.append(pose)
         propagate_ids(previous_poses_2d, current_poses_2d)
         previous_poses_2d = current_poses_2d
-    poses_3d = np.array(poses_3d)
-    poses_2d = np.array(poses_2d)
 
     translated_poses_3d = []
     # translate poses
@@ -124,8 +117,8 @@ def parse_poses(inference_results, input_size, stride, fx, is_video=False):
             pose_2d_valid[:, valid_id] = pose_2d[0:2, kpt_id]
             valid_id += 1
 
-        pose_2d_valid[0] = pose_2d_valid[0] - features_shape[1]/2
-        pose_2d_valid[1] = pose_2d_valid[1] - features_shape[0]/2
+        pose_2d_valid[0] = pose_2d_valid[0] - features_shape[2]/2
+        pose_2d_valid[1] = pose_2d_valid[1] - features_shape[1]/2
         mean_3d = np.expand_dims(pose_3d_valid.mean(axis=1), axis=1)
         mean_2d = np.expand_dims(pose_2d_valid.mean(axis=1), axis=1)
         numerator = np.trace(np.dot((pose_3d_valid[:2, :] - mean_3d[:2, :]).transpose(),
@@ -133,7 +126,7 @@ def parse_poses(inference_results, input_size, stride, fx, is_video=False):
         numerator = np.sqrt(numerator)
         denominator = np.sqrt(np.trace(np.dot((pose_2d_valid[:2, :] - mean_2d[:2, :]).transpose(),
                                               pose_2d_valid[:2, :] - mean_2d[:2, :])).sum())
-        mean_2d = np.array([mean_2d[0, 0], mean_2d[1, 0], fx])
+        mean_2d = np.array([mean_2d[0, 0], mean_2d[1, 0], fx * input_scale / stride])
         mean_3d = np.array([mean_3d[0, 0], mean_3d[1, 0], 0])
         translation = numerator / denominator * mean_2d - mean_3d
 
@@ -145,4 +138,4 @@ def parse_poses(inference_results, input_size, stride, fx, is_video=False):
             pose_3d[2, kpt_id] = pose_3d[2, kpt_id] + translation[2]
         translated_poses_3d.append(pose_3d.transpose().reshape(-1))
 
-    return np.array(translated_poses_3d), poses_2d
+    return np.array(translated_poses_3d), np.array(poses_2d_scaled)
