@@ -55,6 +55,7 @@ static PyObject* extract_poses(PyObject* self, PyObject* args) {
             out_data[person_id * (num_keypoints * 3 + 1) + kpt_id + 1] = poses[person_id].keypoints[kpt_id / 3].y;
             out_data[person_id * (num_keypoints * 3 + 1) + kpt_id + 2] = poses[person_id].keypoints[kpt_id / 3].z;
         }
+        out_data[person_id * (num_keypoints * 3 + 1) + num_keypoints * 3] = poses[person_id].score;
     }
     npy_intp dims[] = {static_cast<npy_intp>(num_persons),
                        static_cast<npy_intp>(num_keypoints * 3 + 1)};
